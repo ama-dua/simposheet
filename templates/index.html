@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="SimpoSheet converts bank statements, receipts, and bills from PDF into clean, formatted Excel workbooks.">
+  <title>SimpoSheet — PDF statements, beautifully converted to Excel</title>
+  <link rel="stylesheet" href="{{ url_for('static', filename='styles.css') }}">
+</head>
+<body>
+  <header class="site-header">
+    <a class="brand" href="#top" aria-label="SimpoSheet home">
+      <span class="brand-mark">P</span>
+      <span>SimpoSheet</span>
+    </a>
+    <nav>
+      <a href="#convert">Convert</a>
+      <a href="#documents">Documents</a>
+      <a href="#founder">Founder</a>
+      <a href="#faq">FAQ</a>
+    </nav>
+  </header>
+
+  <main id="top">
+    <section class="hero">
+      <div class="hero-copy">
+        <p class="eyebrow">Statements · Receipts · Bills</p>
+        <h1>Bank statements in.<br><em>Clean Excel out.</em></h1>
+        <p class="lede">Upload a PDF and receive a formatted Excel workbook with real dates, real currency values, and totals that verify themselves.</p>
+        <div class="hero-actions">
+          <a class="button gold" href="#convert">Convert a PDF</a>
+          <a class="button outline" href="{{ url_for('sample_statement') }}">Download a sample PDF</a>
+        </div>
+        <p class="privacy-note">Privacy first: files are processed temporarily and deleted after conversion. No account. No document database.</p>
+      </div>
+
+      <section class="converter-card" id="convert" aria-labelledby="convert-title">
+        <p class="card-kicker">Live converter</p>
+        <h2 id="convert-title">Convert your first document</h2>
+        <p>Choose a text-based PDF statement, receipt, or supported bill. Your Excel workbook will download when it is ready.</p>
+
+        {% if error %}
+          <div class="error" role="alert">{{ error }}</div>
+        {% endif %}
+
+        <form action="{{ url_for('convert_upload') }}" method="post" enctype="multipart/form-data" id="convert-form">
+          <label class="drop-zone" for="document">
+            <span class="drop-icon">PDF</span>
+            <span class="drop-title">Choose a PDF</span>
+            <span class="drop-subtitle" id="file-label">Maximum 10 MB · PDF only</span>
+          </label>
+          <input id="document" name="document" type="file" accept="application/pdf,.pdf" required>
+          <button class="button gold full" type="submit" id="convert-button">Convert to Excel</button>
+        </form>
+        <p class="fine-print">Scanned-image PDFs and handwriting are not supported yet.</p>
+      </section>
+    </section>
+
+    <section class="documents" id="documents">
+      <p class="eyebrow centered">One tool, three jobs</p>
+      <h2 class="section-title">Built for the paperwork you actually receive</h2>
+      <div class="cards">
+        <article>
+          <span class="number">01</span>
+          <h3>Bank statements</h3>
+          <p>Transactions in a clean table with debit and credit columns, plus a reconciliation check against the statement balance.</p>
+        </article>
+        <article>
+          <span class="number">02</span>
+          <h3>Receipts</h3>
+          <p>One tidy expense record with the date, vendor, reference, amount, and payment method — card last four digits only.</p>
+        </article>
+        <article>
+          <span class="number">03</span>
+          <h3>Bills</h3>
+          <p>A clear bill summary with current charges, previous balance, total due, and line items checked against the bill’s own totals.</p>
+        </article>
+      </div>
+    </section>
+
+    <section class="founder" id="founder">
+      <div>
+        <p class="eyebrow">Meet the founder</p>
+        <h2>Built by Gifty Arthur Danquah</h2>
+        <p>SimpoSheet was created by Gifty Arthur Danquah, a business systems and data analyst who believes financial paperwork should arrive ready to use — not as another cleanup project.</p>
+      </div>
+      <div class="founder-card">
+        <span class="initials">GD</span>
+        <div>
+          <strong>Gifty Arthur Danquah</strong>
+          <span>Founder & Builder</span>
+        </div>
+      </div>
+    </section>
+
+    <section class="faq" id="faq">
+      <p class="eyebrow centered">Questions</p>
+      <h2 class="section-title">Before you upload</h2>
+      <div class="faq-list">
+        <details>
+          <summary>Do you store my documents?</summary>
+          <p>No. The uploaded PDF and generated workbook are held only in a temporary working folder for the conversion and deleted when the download response closes.</p>
+        </details>
+        <details>
+          <summary>What kinds of PDFs work best?</summary>
+          <p>Text-based PDFs downloaded from a bank, business, or service provider. Scanned images require OCR, which is a future feature.</p>
+        </details>
+        <details>
+          <summary>What is inside the Excel file?</summary>
+          <p>Formatted worksheets using real Excel date and currency values, so you can sort, filter, total, and build formulas immediately.</p>
+        </details>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span>SimpoSheet</span>
+    <span>Created by Gifty Arthur Danquah</span>
+  </footer>
+
+  <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
