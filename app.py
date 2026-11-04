@@ -51,6 +51,26 @@ def health():
     return jsonify({"status": "ok", "service": "SimpoSheet"})
 
 
+@app.get("/manifest.webmanifest")
+def manifest():
+    return send_file(
+        BASE_DIR / "static" / "manifest.webmanifest",
+        mimetype="application/manifest+json",
+    )
+
+
+@app.get("/sw.js")
+def service_worker():
+    # Served from the site root so the service worker's scope covers the
+    # whole app, not just /static/.
+    response = send_file(
+        BASE_DIR / "static" / "sw.js",
+        mimetype="application/javascript",
+    )
+    response.headers["Cache-Control"] = "no-cache"
+    return response
+
+
 @app.get("/sample-statement")
 def sample_statement():
     return send_file(
