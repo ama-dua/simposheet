@@ -20,6 +20,108 @@ from datetime import date
 
 import pdfplumber
 from openpyxl import Workbook
+
+try:
+    import pymupdf
+except ImportError:  # fallback extractor unavailable
+    pymupdf = None
+
+from pathlib import Path
+
+from openpyxl.drawing.image import Image as XLImage
+from openpyxl.styles import Alignment, Font, PatternFill
+from openpyxl.utils import get_column_letter
+
+# --- SimpoSheet brand styling for generated workbooks -------------------
+NAVY = "102A43"
+GOLD = "C19B3D"
+GOLD_SOFT = "F4EEE1"
+GREEN = "1E7B34"
+RED = "B3261E"
+GRAY = "6B7280"
+MONEY_FMT = '_("$"* #,##0.00_);_("$"* (#,##0.00);_("$"* "-"??_);_(@_)'
+BRAND_ICON = Path(__file__).parent / "static" / "icons" / "icon-512.png"
+HEADER_FILL = PatternFill("solid", fgColor=NAVY)
+HEADER_FONT = Font(name="Georgia", size=11, bold=True, color="FFFFFF")
+BAND_FILL = PatternFill("solid", fgColor=GOLD_SOFT)
+GOLD_FILL = PatternFill("solid", fgColor=GOLD)
+
+
+def brand_header(ws, subtitle, ncols):
+    """SimpoSheet logo + wordmark block (rows 1-5); content starts row 6."""
+    ws.sheet_view.showGridLines = False
+    ws.sheet_properties.pageSetUpPr.fitToPage = True
+    ws.page_setup.fitToWidth = 1
+    ws.page_setup.fitToHeight = 0
+    if BRAND_ICON.exists():
+        img = XLImage(str(BRAND_ICON))
+        img.width = img.height = 46
+        img.anchor = "A1"
+        ws.add_image(img)
+    ws.row_dimensions[1].height = 24
+    ws.row_dimensions[2].height = 15
+    ws.row_dimensions[3].height = 13
+    ws.row_dimensions[5].height = 5
+    c = ws.cell(row=1, column=2, value="SimpoSheet")
+    c.font = Font(name="Georgia", size=16, bold=True, color=NAVY)
+    c = ws.cell(row=2, column=2, value=subtitle)
+    c.font = Font(size=10, italic=True, color=GOLD)
+    c = ws.cell(row=3, column=2,
+                value="Clean Excel from your PDFs · simposheet.onrender.com")
+    c.font = Font(size=8, color=GRAY)
+    for col in range(1, ncols + 1):
+        ws.cell(row=5, column=col).fill = GOLD_FILL
+
+
+def style_header_row(ws, row, ncols):
+    for col in range(1, ncols + 1):
+        c = ws.cell(row=row, column=col)
+        c.fill = HEADER_FILL
+        c.font = HEADER_FONT
+        c.alignment = Alignment(horizontal="center", vertical="center")
+    ws.row_dimensions[row].height = 22
+    ws.print_title_rows = f"{row}:{row}"
+
+
+def style_field_rows(ws, fields, start_row):
+    """Two-column Field/Value block: banded rows, money/date formats kept,
+    verification results highlighted green (MATCH) or red (MISMATCH)."""
+    for i, (k, v) in enumerate(fields):
+        r = start_row + i
+        ws.row_dimensions[r].height = 18
+        kc = ws.cell(row=r, column=1, value=k)
+        kc.font = Font(bold=True, color=NAVY)
+        kc.alignment = Alignment(vertical="center")
+        c = ws.cell(row=r, column=2,
+                    value=xl_date(v) if isinstance(v, date) else v)
+        if isinstance(v, float):
+            c.number_format = MONEY_FMT
+        if isinstance(v, date):
+            c.number_format = "mm/dd/yyyy"
+        numeric = isinstance(v, (int, float, date))
+        c.alignment = Alignment(horizontal="right" if numeric else "left",
+                                vertical="center")
+        if i % 2 == 1:
+            kc.fill = BAND_FILL
+            c.fill = BAND_FILL
+        if "check" in k.lower() or k.lower() == "reconciliation":
+            if isinstance(v, str) and v.startswith("MATCH"):
+                c.font = Font(bold=True, color=GREEN)
+            elif isinstance(v, str) and v.startswith("MISMATCH"):
+                c.font = Font(bold=True, color=RED)
+        if k in ("Total due", "Ending balance (from statement)"):
+            c.font = Font(bold=True, size=11)
+
+
+def band_row(ws, row, ncols, banded):
+    """Alternate-row cream banding plus consistent vertical centering and
+    a uniform row height, so every table lines up the same way."""
+    ws.row_dimensions[row].height = 15.5
+    for col in range(1, ncols + 1):
+        c = ws.cell(row=row, column=col)
+        c.alignment = Alignment(vertical="center")
+        if banded:
+            c.fill = BAND_FILL
 from openpyxl.styles import Alignment, Font, PatternFill
 from openpyxl.utils import get_column_letter
 
@@ -195,28 +297,26 @@ def write_receipt_workbook(rec, pdf_path, xlsx_path):
     ws.title = "Expenses"
     headers = ["Date", "Vendor", "Category", "Description",
                "Amount", "Payment Method"]
-    header_fill = PatternFill("solid", fgColor="1F4E79")
-    header_font = Font(bold=True, color="FFFFFF")
+    brand_header(ws, "Receipt — Expense Record", len(headers))
     for col, h in enumerate(headers, 1):
-        c = ws.cell(row=1, column=col, value=h)
-        c.fill = header_fill
-        c.font = header_font
-        c.alignment = Alignment(horizontal="center")
+        ws.cell(row=6, column=col, value=h)
+    style_header_row(ws, 6, len(headers))
     desc = f"Receipt {rec['reference']}" if rec["reference"] else "Receipt"
     values = [xl_date(rec["date"]), rec["vendor"], "Uncategorized", desc,
               rec["amount"], rec["payment_method"]]
     for col, v in enumerate(values, 1):
-        c = ws.cell(row=2, column=col, value=v)
+        c = ws.cell(row=7, column=col, value=v)
         if col == 1:
             c.number_format = "mm/dd/yyyy"
         if col == 5:
-            c.number_format = '"$"#,##0.00'
+            c.number_format = MONEY_FMT
+    band_row(ws, 7, len(headers), False)
     for i, w in enumerate([12, 42, 16, 24, 14, 20], 1):
         ws.column_dimensions[get_column_letter(i)].width = w
-    ws.freeze_panes = "A2"
+    ws.freeze_panes = "A7"
 
     sm = wb.create_sheet("Receipt Detail")
-    sm.cell(row=1, column=1, value="Extracted Receipt").font = Font(bold=True, size=13)
+    brand_header(sm, "Receipt — Detail", 2)
     detail = [
         ("Source file", pdf_path.split("/")[-1]),
         ("Vendor", rec["vendor"]),
@@ -225,24 +325,22 @@ def write_receipt_workbook(rec, pdf_path, xlsx_path):
         ("Reference #", rec["reference"]),
         ("Payment method", rec["payment_method"]),
     ]
-    for i, (k, v) in enumerate(detail, 3):
-        sm.cell(row=i, column=1, value=k).font = Font(bold=True)
-        c = sm.cell(row=i, column=2, value=v)
-        if isinstance(v, float):
-            c.number_format = '"$"#,##0.00'
-        if isinstance(v, date):
-            c.number_format = "mm/dd/yyyy"
+    for col, h in enumerate(["Field", "Value"], 1):
+        sm.cell(row=6, column=col, value=h)
+    style_header_row(sm, 6, 2)
+    style_field_rows(sm, detail, 7)
     sm.column_dimensions["A"].width = 18
     sm.column_dimensions["B"].width = 44
     wb.save(xlsx_path)
 
 
 BILL_BRANDS = ["T-Mobile", "Verizon", "AT&T", "Xfinity", "Comcast",
-               "Spectrum", "CenturyLink", "Sprint", "Cricket", "Metro"]
+               "Spectrum", "CenturyLink", "Sprint", "Cricket",
+               "Dakota Electric", "Xcel Energy", "Duke Energy"]
 
 
 def parse_date_str(s):
-    for fmt in ("%B %d, %Y", "%b %d, %Y"):
+    for fmt in ("%B %d, %Y", "%b %d, %Y", "%m/%d/%Y"):
         try:
             return __import__("datetime").datetime.strptime(s, fmt).date()
         except ValueError:
@@ -257,7 +355,7 @@ def extract_bill(lines):
     bill = {"vendor": None, "bill_date": None, "due_date": None,
             "total_due": None, "past_due": None, "plans": None,
             "equipment": None, "services": None, "current_total": None,
-            "items": []}
+            "items": [], "details": []}
 
     for brand in BILL_BRANDS:
         if brand.lower() in text.lower():
@@ -272,10 +370,24 @@ def extract_bill(lines):
     m = re.search(r"due by ([A-Za-z]+ \d{1,2}, \d{4})", text, re.IGNORECASE)
     if m:
         bill["due_date"] = parse_date_str(m.group(1))
+    # Utility bills label their dates numerically (Statement Date / Due Date).
+    m = re.search(r"Statement Date:?\s*(\d{1,2}/\d{1,2}/\d{4})", text,
+                  re.IGNORECASE)
+    if m and parse_date_str(m.group(1)):
+        bill["bill_date"] = parse_date_str(m.group(1))
+    m = re.search(r"Due Date:?\s*(\d{1,2}/\d{1,2}/\d{4})", text,
+                  re.IGNORECASE)
+    if m and parse_date_str(m.group(1)):
+        bill["due_date"] = parse_date_str(m.group(1))
 
     m = re.search(r"TOTAL DUE\s*\$([\d,]+\.\d{2})", text, re.IGNORECASE)
     if m:
         bill["total_due"] = float(m.group(1).replace(",", ""))
+    if bill["total_due"] is None:
+        m = re.search(r"Total Amount Due:?[^\d$]*\$?\s*([\d,]+\.\d{2})",
+                      text, re.IGNORECASE)
+        if m:
+            bill["total_due"] = float(m.group(1).replace(",", ""))
 
     m = re.search(r"PAST DUE BALANCE\s*\$([\d,]+\.\d{2})", text,
                   re.IGNORECASE)
@@ -290,6 +402,29 @@ def extract_bill(lines):
         bill["plans"], bill["equipment"], bill["services"], \
             bill["current_total"] = (float(g.replace(",", ""))
                                       for g in m.groups())
+
+    if bill["current_total"] is None:
+        m = re.search(r"Total New Charges:?[^\d$]*\$?\s*([\d,]+\.\d{2})",
+                      text, re.IGNORECASE)
+        if m:
+            bill["current_total"] = float(m.group(1).replace(",", ""))
+
+    # Utility-bill subtotals (electric charges, taxes) shown as detail rows.
+    details = []
+    elec = tax = None
+    m = re.search(r"Total Monthly Electric Charges:?[^\d$]*\$?\s*"
+                  r"([\d,]+\.\d{2})", text, re.IGNORECASE)
+    if m:
+        elec = float(m.group(1).replace(",", ""))
+        details.append(("Electric charges", elec))
+    m = re.search(r"Total Taxes:?[^\d$]*\$?\s*([\d,]+\.\d{2})", text,
+                  re.IGNORECASE)
+    if m:
+        tax = float(m.group(1).replace(",", ""))
+        details.append(("Taxes", tax))
+    bill["details"] = details
+    bill["_elec_subtotal"] = elec
+    bill["_tax_subtotal"] = tax
 
     item_re = re.compile(r"^(Account|\(\d{3}\)\s*\d{3}-\d{4})\s+(.*)$")
     # Per-line totals live in the bill's summary table; the detailed-charges
@@ -315,6 +450,61 @@ def extract_bill(lines):
             "Voice" if "Voice" in rest else "")
         bill["items"].append({"line": m.group(1), "type": typ,
                               "total": parse_amount(amounts[-1])})
+
+    if not bill["items"]:
+        # Utility-style charge tables (electric, water, gas): description
+        # lines ending in an amount, grouped under Charges then Taxes.
+        skip_words = ("total", "charge description", "billing consumption",
+                      "account", "balance", "statement", "page", "comparison",
+                      "current month", "previous month", "same month",
+                      "generation", "transmission", "distribution")
+        charges, taxes = [], []
+        section = charges
+        for ln in lines:
+            low = ln.lower().strip()
+            if low.startswith("total new charges"):
+                break
+            if low == "taxes":
+                section = taxes
+                continue
+            amounts = AMOUNT_RE.findall(ln)
+            if not amounts:
+                continue
+            desc = AMOUNT_RE.sub("", ln)
+            desc = re.sub(r"\b\d+(\.\d+)?\b", "", desc)
+            desc = re.sub(r"\b(kWh|kW|CR)\b", "", desc)
+            desc = re.sub(r"\s+", " ", desc).strip(" -:")
+            if len(desc) < 3 or not re.search(r"[A-Za-z]{3,}", desc):
+                continue
+            if re.search(r"\d", desc):
+                continue  # meter IDs, dates, and rates are not charge lines
+            if any(w in desc.lower() for w in skip_words):
+                continue
+            section.append({"line": desc, "type": "",
+                            "total": parse_amount(amounts[-1])})
+
+        def reconcile_flip(items, subtotal):
+            """If the items miss the printed subtotal by exactly twice one
+            item, that item is a credit (its CR marker is unreliable in
+            extracted text) — flip it so the section reconciles."""
+            if subtotal is None or not items:
+                return items
+            s = round(sum(i["total"] for i in items), 2)
+            if abs(s - subtotal) < 0.01:
+                return items
+            for it in items:
+                if abs(s - 2 * it["total"] - subtotal) < 0.01:
+                    it["total"] = -it["total"]
+                    it["type"] = "Credit"
+                    break
+            return items
+
+        charges = reconcile_flip(charges, bill.pop("_elec_subtotal", None))
+        taxes = reconcile_flip(taxes, bill.pop("_tax_subtotal", None))
+        bill["items"] = charges + taxes
+    else:
+        bill.pop("_elec_subtotal", None)
+        bill.pop("_tax_subtotal", None)
     return bill
 
 
@@ -322,7 +512,8 @@ def write_bill_workbook(bill, pdf_path, xlsx_path):
     wb = Workbook()
     ws = wb.active
     ws.title = "Bill Summary"
-    ws.cell(row=1, column=1, value="Bill Summary").font = Font(bold=True, size=13)
+    brand_header(ws, f"Bill Summary — {bill['vendor']}" if bill["vendor"]
+                 else "Bill Summary", 2)
     items_sum = round(sum(i["total"] for i in bill["items"]), 2) or None
     check = None
     if items_sum is not None and bill["current_total"] is not None:
@@ -344,50 +535,69 @@ def write_bill_workbook(bill, pdf_path, xlsx_path):
         ("Bill date", bill["bill_date"]),
         ("Due date", bill["due_date"]),
         ("Previous balance (past due)", past_due),
-        ("This month - Plans", bill["plans"]),
-        ("This month - Equipment", bill["equipment"]),
-        ("This month - Services", bill["services"]),
+    ]
+    if any(v is not None for v in
+           (bill["plans"], bill["equipment"], bill["services"])):
+        fields += [("This month - Plans", bill["plans"]),
+                   ("This month - Equipment", bill["equipment"]),
+                   ("This month - Services", bill["services"])]
+    fields += [(f"This month - {k}", v) for k, v in bill.get("details", [])]
+    fields += [
         ("This month - Total charges", bill["current_total"]),
         ("Total due", bill["total_due"]),
         ("Total due check (prev + this month)", due_check),
         ("Line items sum (this month)", items_sum),
         ("Line items check (vs this month)", check),
     ]
-    for i, (k, v) in enumerate(fields, 3):
-        ws.cell(row=i, column=1, value=k).font = Font(bold=True)
-        c = ws.cell(row=i, column=2, value=xl_date(v) if isinstance(v, date) else v)
-        if isinstance(v, float):
-            c.number_format = '"$"#,##0.00'
-        if isinstance(v, date):
-            c.number_format = "mm/dd/yyyy"
-    ws.column_dimensions["A"].width = 28
+    for col, h in enumerate(["Field", "Value"], 1):
+        ws.cell(row=6, column=col, value=h)
+    style_header_row(ws, 6, 2)
+    style_field_rows(ws, fields, 7)
+    ws.column_dimensions["A"].width = 38
     ws.column_dimensions["B"].width = 30
 
     li = wb.create_sheet("Line Items")
-    header_fill = PatternFill("solid", fgColor="1F4E79")
-    header_font = Font(bold=True, color="FFFFFF")
+    brand_header(li, "Bill — Line Items", 3)
     for col, h in enumerate(["Line", "Type", "Total"], 1):
-        c = li.cell(row=1, column=col, value=h)
-        c.fill = header_fill
-        c.font = header_font
-        c.alignment = Alignment(horizontal="center")
-    for i, item in enumerate(bill["items"], 2):
+        li.cell(row=6, column=col, value=h)
+    style_header_row(li, 6, 3)
+    for j, item in enumerate(bill["items"]):
+        i = 7 + j
         li.cell(row=i, column=1, value=item["line"])
         li.cell(row=i, column=2, value=item["type"])
-        li.cell(row=i, column=3, value=item["total"]).number_format = '"$"#,##0.00'
+        li.cell(row=i, column=3, value=item["total"]).number_format = MONEY_FMT
+        band_row(li, i, 3, j % 2 == 1)
     for col, w in [("A", 20), ("B", 12), ("C", 14)]:
         li.column_dimensions[col].width = w
-    li.freeze_panes = "A2"
+    li.freeze_panes = "A7"
     wb.save(xlsx_path)
 
 
-def convert(pdf_path, xlsx_path):
+def extract_lines(pdf_path):
+    """Extract text lines from a PDF. Some billing systems generate PDFs
+    whose subset CID fonts pdfplumber cannot decode — it returns nothing
+    even though the document is full of text. PyMuPDF reads those files,
+    so fall back to it whenever pdfplumber finds essentially no text."""
     lines = []
+    npages = 0
     with pdfplumber.open(pdf_path) as pdf:
         npages = len(pdf.pages)
         for page in pdf.pages:
             text = page.extract_text() or ""
             lines.extend(text.splitlines())
+    if pymupdf is not None and len("".join(lines).strip()) < 100:
+        alt = []
+        with pymupdf.open(pdf_path) as doc:
+            npages = max(npages, len(doc))
+            for page in doc:
+                alt.extend(page.get_text(sort=True).splitlines())
+        if len("".join(alt).strip()) > len("".join(lines).strip()):
+            lines = alt
+    return lines, npages
+
+
+def convert(pdf_path, xlsx_path):
+    lines, npages = extract_lines(pdf_path)
     year = find_statement_year(lines)
     beginning = find_label_amount(
         lines, ["beginning balance", "opening balance", "previous balance"])
@@ -429,27 +639,26 @@ def convert(pdf_path, xlsx_path):
     ws = wb.active
     ws.title = "Transactions"
     headers = ["Date", "Description", "Debit", "Credit", "Balance"]
-    header_fill = PatternFill("solid", fgColor="1F4E79")
-    header_font = Font(bold=True, color="FFFFFF")
+    brand_header(ws, "Bank Statement — Transactions", len(headers))
     for col, h in enumerate(headers, 1):
-        c = ws.cell(row=1, column=col, value=h)
-        c.fill = header_fill
-        c.font = header_font
-        c.alignment = Alignment(horizontal="center")
-    for i, r in enumerate(rows, 2):
+        ws.cell(row=6, column=col, value=h)
+    style_header_row(ws, 6, len(headers))
+    for j, r in enumerate(rows):
+        i = 7 + j
         ws.cell(row=i, column=1, value=xl_date(r["date"])).number_format = "mm/dd/yyyy"
         ws.cell(row=i, column=2, value=r["description"])
         if r["debit"] is not None:
-            ws.cell(row=i, column=3, value=r["debit"]).number_format = '"$"#,##0.00'
+            ws.cell(row=i, column=3, value=r["debit"]).number_format = MONEY_FMT
         if r["credit"] is not None:
-            ws.cell(row=i, column=4, value=r["credit"]).number_format = '"$"#,##0.00'
+            ws.cell(row=i, column=4, value=r["credit"]).number_format = MONEY_FMT
         if r["balance"] is not None:
-            ws.cell(row=i, column=5, value=r["balance"]).number_format = '"$"#,##0.00'
+            ws.cell(row=i, column=5, value=r["balance"]).number_format = MONEY_FMT
+        band_row(ws, i, len(headers), j % 2 == 1)
     widths = [12, 60, 14, 14, 14]
     for i, w in enumerate(widths, 1):
         ws.column_dimensions[get_column_letter(i)].width = w
-    ws.freeze_panes = "A2"
-    ws.auto_filter.ref = f"A1:E{max(len(rows) + 1, 2)}"
+    ws.freeze_panes = "A7"
+    ws.auto_filter.ref = f"A6:E{max(len(rows) + 6, 7)}"
 
     sm = wb.create_sheet("Summary")
     computed_ending = None
@@ -470,12 +679,11 @@ def convert(pdf_path, xlsx_path):
         ("Ending balance (computed)", computed_ending),
         ("Reconciliation", status),
     ]
-    sm.cell(row=1, column=1, value="Conversion Summary").font = Font(bold=True, size=13)
-    for i, (k, v) in enumerate(summary, 3):
-        sm.cell(row=i, column=1, value=k).font = Font(bold=True)
-        c = sm.cell(row=i, column=2, value=v)
-        if isinstance(v, float):
-            c.number_format = '"$"#,##0.00'
+    brand_header(sm, "Bank Statement — Summary", 2)
+    for col, h in enumerate(["Field", "Value"], 1):
+        sm.cell(row=6, column=col, value=h)
+    style_header_row(sm, 6, 2)
+    style_field_rows(sm, summary, 7)
     sm.column_dimensions["A"].width = 38
     sm.column_dimensions["B"].width = 30
 
