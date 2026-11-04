@@ -13,3 +13,9 @@ form.addEventListener('submit', () => {
   button.disabled = true;
   button.textContent = 'Converting…';
 });
+
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => {
+    navigator.serviceWorker.register('/sw.js').catch(() => {});
+  });
+}
