@@ -17,6 +17,9 @@ def test_home_and_health():
     health = client.get("/health")
     assert health.status_code == 200
     assert health.get_json() == {"service": "SimpoSheet", "status": "ok"}
+    privacy = client.get("/privacy")
+    assert privacy.status_code == 200
+    assert b"Privacy Policy" in privacy.data
 
 
 def test_pwa_manifest_and_service_worker():
