@@ -71,6 +71,11 @@ def service_worker():
     return response
 
 
+@app.get("/privacy")
+def privacy():
+    return render_template("privacy.html")
+
+
 @app.get("/sample-statement")
 def sample_statement():
     return send_file(
